@@ -57,6 +57,6 @@
     "build_node-sass": "node scripts/build-node-sass.js"
   },
   "dependencies": {
-    "windows-build-tools": "2.2.1"
+    "windows-build-tools": "^2.2.1"
   }
 }
