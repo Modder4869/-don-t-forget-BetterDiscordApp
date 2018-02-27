@@ -55,5 +55,11 @@
     "lint": "eslint -f unix client/src core/src csseditor/src",
     "test": "npm run build && npm run lint",
     "build_node-sass": "node scripts/build-node-sass.js"
+<<<<<<< HEAD
+=======
+  },
+  "dependencies": {
+    "windows-build-tools": "2.2.1"
+>>>>>>> parent of 598bea4... Revert "hmm"
   }
 }
