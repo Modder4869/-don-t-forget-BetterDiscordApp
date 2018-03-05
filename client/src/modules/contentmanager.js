@@ -9,10 +9,10 @@
 */
 
 import Globals from './globals';
-import { FileUtils, ClientLogger as Logger } from 'common';
+import { Utils, FileUtils, ClientLogger as Logger } from 'common';
 import path from 'path';
 import { Events } from 'modules';
-import { ErrorEvent } from 'structs';
+import { SettingsSet, ErrorEvent } from 'structs';
 import { Modals } from 'ui';
 
 /**
@@ -54,6 +54,10 @@ export default class {
             const directories = await FileUtils.listDirectory(this.contentPath);
 
             for (let dir of directories) {
+                try {
+                    await FileUtils.directoryExists(path.join(this.contentPath, dir));
+                } catch (err) { continue; }
+
                 try {
                     await this.preloadContent(dir);
                 } catch (err) {
@@ -97,6 +101,10 @@ export default class {
             for (let dir of directories) {
                 // If content is already loaded this should resolve.
                 if (this.getContentByDirName(dir)) continue;
+
+                try {
+                    await FileUtils.directoryExists(path.join(this.contentPath, dir));
+                } catch (err) { continue; }
 
                 try {
                     // Load if not
@@ -168,40 +176,42 @@ export default class {
             const readConfig = await this.readConfig(contentPath);
             const mainPath = path.join(contentPath, readConfig.main);
 
-            readConfig.defaultConfig = readConfig.defaultConfig || [];
+            const defaultConfig = new SettingsSet({
+                settings: readConfig.defaultConfig,
+                schemes: readConfig.configSchemes
+            });
 
             const userConfig = {
                 enabled: false,
-                config: readConfig.defaultConfig
+                config: undefined,
+                data: {}
             };
 
             try {
                 const readUserConfig = await this.readUserConfig(contentPath);
                 userConfig.enabled = readUserConfig.enabled || false;
-                userConfig.config = readConfig.defaultConfig.map(category => {
-                    let newCategory = readUserConfig.config.find(c => c.category === category.category);
-                    // return userSet || config;
-                    if (!newCategory) newCategory = {settings: []};
-
-                    category.settings = category.settings.map(setting => {
-                        if (setting.type === 'array' || setting.type === 'custom') setting.path = contentPath;
-                        const newSetting = newCategory.settings.find(s => s.id === setting.id);
-                        if (!newSetting) return setting;
-
-                        setting.value = newSetting.value;
-                        return setting;
-                    });
-                    return category;
-                });
-                userConfig.css = readUserConfig.css || null;
-                // userConfig.config = readUserConfig.config;
+                // await userConfig.config.merge({ settings: readUserConfig.config });
+                // userConfig.config.setSaved();
+                // userConfig.config = userConfig.config.clone({ settings: readUserConfig.config });
+                userConfig.config = readUserConfig.config;
+                userConfig.data = readUserConfig.data || {};
             } catch (err) { /*We don't care if this fails it either means that user config doesn't exist or there's something wrong with it so we revert to default config*/
-
+                Logger.info(this.moduleName, `Failed reading config for ${this.contentType} ${readConfig.info.name} in ${dirName}`);
+                Logger.err(this.moduleName, err);
             }
 
+            userConfig.config = defaultConfig.clone({ settings: userConfig.config });
+            userConfig.config.setSaved();
+
+            for (let setting of userConfig.config.findSettings(() => true)) {
+                setting.setContentPath(contentPath);
+            }
+
+            Utils.deepfreeze(defaultConfig);
+
             const configs = {
-                defaultConfig: readConfig.defaultConfig,
-                schemes: readConfig.configSchemes,
+                defaultConfig,
+                schemes: userConfig.schemes,
                 userConfig
             };
 
@@ -211,7 +221,8 @@ export default class {
                 mainPath
             };
 
-            const content = await this.loadContent(paths, configs, readConfig.info, readConfig.main, readConfig.dependencies);
+            const content = await this.loadContent(paths, configs, readConfig.info, readConfig.main, readConfig.dependencies, readConfig.permissions);
+            if (!content) return undefined;
             if (!reload && this.getContentById(content.id))
                 throw {message: `A ${this.contentType} with the ID ${content.id} already exists.`};
 
